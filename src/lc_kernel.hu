@@ -1,0 +1,4 @@
+#include <inttypes.h>
+
+__device__ uint64_t extract_bits_dev(const uint8_t*__restrict data, int start, int bits);
+__global__ void vectorSum(const uint8_t*__restrict data_in, uint64_t*__restrict data_out, int data_n, int data_size);

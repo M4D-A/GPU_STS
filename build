@@ -1,1 +1,0 @@
-nvcc src/*.cpp -o gstat; ./gstat; rm gstat
