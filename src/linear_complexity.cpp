@@ -118,8 +118,6 @@ long double lc_test(std::vector<uint8_t> data, uint64_t bit_sequence_len) {
         bins[6] += (ti > 2.5L) ? 1u : 0;
     }
 
-    printf("Bins: %lu, %lu, %lu, %lu, %lu, %lu, %lu\n", bins[0], bins[1], bins[2], bins[3], bins[4], bins[5], bins[6]);
-
     long double chi = 0.0L;
     for (i = 0; i < 7; i++) {
         long double expected = probs[i] * sequences_num;

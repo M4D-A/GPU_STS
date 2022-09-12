@@ -6,38 +6,41 @@
 #include <assert.h>
 
 int main() {
-  const int data_n = 1024 * 64;
-  const int data_size = 1024;
+  const int bytes = 1024 * 1024 * 1024;
+  const int data_n = 2560;
+  const int data_size = bytes / data_n;
+  
   const int threads_per_block = 256;
-  const int blocks_per_grid = (data_n + threads_per_block - 1) / threads_per_block;
+  const int blocks_per_grid = (data_n - 1) / threads_per_block + 1;
 
   std::vector<uint8_t> h_data_in(data_n * data_size);
-  std::vector<uint64_t> h_data_out(data_n);
+  std::vector<double> h_data_out(data_n);
 
   for(auto &i : h_data_in) {
     i = rand() % 256;
   }
 
-  print_bit_data(h_data_in, 31, 8);
-
-
   uint8_t *d_data_in;
-  uint64_t *d_data_out;
+  double *d_data_out;
   cudaMalloc(&d_data_in, data_n * data_size);
-  cudaMalloc(&d_data_out, data_n);
+  cudaMalloc(&d_data_out, data_n * sizeof(double));
 
   // Copy data from the host to the device (CPU -> GPU)
   cudaMemcpy(d_data_in, h_data_in.data(), data_n * data_size, cudaMemcpyHostToDevice);
 
-  vectorSum<<<blocks_per_grid, threads_per_block>>>(d_data_in, d_data_out, data_n, data_size);
+  vectorSum<<<blocks_per_grid, threads_per_block>>>(d_data_in, d_data_out, 31, data_n, data_size);
 
   cudaMemcpy(h_data_out.data(), d_data_out, data_n, cudaMemcpyDeviceToHost);
 
   for(int i = 0; i < 10; i++) {
-    print_uint64(h_data_out[i], 31);
-    uint64_t bits = extract_bits(h_data_in, i * data_size, 31);
-    print_uint64(bits, 31);
-    printf("\n");
+    std::cout << h_data_out[i] << std::endl;
+    int offset = i * data_size;
+    auto start = h_data_in.begin() + offset;
+    auto end = h_data_in.begin() + offset + data_size;
+
+    std::vector<uint8_t> v(start, end);
+    auto chi = lc_test(v, 31);
+    std::cout << chi << std::endl << std::endl;
   }
 
   // Free memory on device
