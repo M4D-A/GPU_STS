@@ -1,53 +1,86 @@
-#include "lc_kernel.hu"
 #include "linear_complexity.hpp"
 #include "io.hpp"
+#include "lc_kernel.hu"
 #include <iostream>
 #include <vector>
 #include <assert.h>
 
+
 int main() {
-  const int bytes = 1024 * 1024 * 1024;
-  const int data_n = 2560;
-  const int data_size = bytes / data_n;
+  int files = 1024 * 1024; // 64k files
+  int file_size = 1024; // 16KB = 128Kbits
+
+
+  // DATA GENERATION
+  cudaEvent_t gen_start, gen_stop;
+  float gen_time;
+
+  cudaEventCreate(&gen_start);
+  cudaEventRecord(gen_start, 0);
+
+  std::vector<std::vector<uint8_t>> data_pieces(files);
+  for(auto &piece : data_pieces) {
+    piece.resize(file_size);
+    for(int i = 0; i < file_size; i++) {
+      piece[i] = rand() % 256;
+    }
+  }
+
+  std::vector<uint8_t> data;
+  for(auto &piece : data_pieces) {
+    data.insert(data.end(), piece.begin(), piece.end());
+  }
+
+  cudaEventCreate(&gen_stop);
+  cudaEventRecord(gen_stop, 0);
+  cudaEventSynchronize(gen_stop);
+  cudaEventElapsedTime(&gen_time, gen_start, gen_stop);
+  std::cout << "Data generation time: " << gen_time << " ms" << std::endl;
   
-  const int threads_per_block = 256;
-  const int blocks_per_grid = (data_n - 1) / threads_per_block + 1;
 
-  std::vector<uint8_t> h_data_in(data_n * data_size);
-  std::vector<double> h_data_out(data_n);
+  std::vector<double> dev_results(files);
+  std::vector<double> host_results(files);
 
-  for(auto &i : h_data_in) {
-    i = rand() % 256;
+  // GPU
+  cudaEvent_t dev_start, dev_stop;
+  float dev_elapsedTime;
+
+  cudaEventCreate(&dev_start);
+  cudaEventRecord(dev_start,0);
+
+  run_lc_tests(data.data(), files, file_size, 31, dev_results.data());
+
+  cudaEventCreate(&dev_stop);
+  cudaEventRecord(dev_stop,0);
+  cudaEventSynchronize(dev_stop);
+
+  cudaEventElapsedTime(&dev_elapsedTime, dev_start,dev_stop);
+  printf("Device time: %f ms\n", dev_elapsedTime);
+
+  // CPU
+  cudaEvent_t host_start, host_stop;
+  float host_elapsedTime;
+
+  cudaEventCreate(&host_start);
+  cudaEventRecord(host_start,0);
+
+  for(int i = 0; i < files; i++) {
+    host_results[i] = lc_test(data_pieces[i], 31);
   }
 
-  uint8_t *d_data_in;
-  double *d_data_out;
-  cudaMalloc(&d_data_in, data_n * data_size);
-  cudaMalloc(&d_data_out, data_n * sizeof(double));
+  cudaEventCreate(&host_stop);
+  cudaEventRecord(host_stop,0);
+  cudaEventSynchronize(host_stop);
 
-  // Copy data from the host to the device (CPU -> GPU)
-  cudaMemcpy(d_data_in, h_data_in.data(), data_n * data_size, cudaMemcpyHostToDevice);
+  cudaEventElapsedTime(&host_elapsedTime, host_start,host_stop);
+  printf("Host time: %f ms\n", host_elapsedTime);
 
-  vectorSum<<<blocks_per_grid, threads_per_block>>>(d_data_in, d_data_out, 31, data_n, data_size);
-
-  cudaMemcpy(h_data_out.data(), d_data_out, data_n, cudaMemcpyDeviceToHost);
-
-  for(int i = 0; i < 10; i++) {
-    std::cout << h_data_out[i] << std::endl;
-    int offset = i * data_size;
-    auto start = h_data_in.begin() + offset;
-    auto end = h_data_in.begin() + offset + data_size;
-
-    std::vector<uint8_t> v(start, end);
-    auto chi = lc_test(v, 31);
-    std::cout << chi << std::endl << std::endl;
+  // Compare
+  for(int i = 0; i < files; i++) {
+    assert(abs(dev_results[i] - host_results[i]) < 0.0001);
   }
 
-  // Free memory on device
-  cudaFree(d_data_in);
-  cudaFree(d_data_out);
-
-  std::cout << "COMPLETED SUCCESSFULLY\n";
+  printf("Success!\n");
 
   return 0;
 }

@@ -1,10 +1,23 @@
 #include <inttypes.h>
 
 __device__ uint64_t dev_extract_bits(const uint8_t*__restrict data, int start, int bits);
+__device__ uint64_t dev_extract_reverse_bits(uint8_t* data, int start, int bits);
 __device__ uint64_t dev_uintxor(uint64_t num);
 __device__ uint64_t dev_trailing_zeros(uint64_t num);
 __device__ uint64_t dev_reverse_uint64_t(uint64_t num, uint64_t len);
 __device__ uint64_t dev_complexity(uint64_t sequence, uint64_t length);
 __device__ double dev_lc_test(uint8_t* data, uint64_t data_size, uint64_t bit_sequence_len);
 
-__global__ void vectorSum(const uint8_t*__restrict data_in, double*__restrict data_out, int bit_sequence_len, int data_n, int data_size);
+__global__ void lc_kernel(
+    const uint8_t*__restrict data_in,
+    int data_n, 
+    int data_size,
+    int bit_sequence_len,
+    double*__restrict data_out);
+
+void run_lc_tests(
+    const uint8_t* data_in,
+    int data_num,
+    int data_size,
+    int bit_sequence_len, 
+    double* data_out);

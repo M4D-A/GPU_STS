@@ -1,3 +1,16 @@
-nvcc src/*.cpp src/*.cu -g -G -o gstat;
-nvprof ./gstat; 
-#rm gstat
+nvcc -O2 src/*.cpp src/*.cu -g -G -o gstat;
+echo "Compilation done";
+
+if [ "$1" = "run" ]; then
+    time ./gstat;
+elif [ "$1" = "debug" ]; then
+    cuda-gdb ./gstat;
+elif [ "$1" = "nprof" ]; then
+    nvprof ./gstat;
+elif [ "$1" = "vprof" ]; then
+    valgrind --tool=callgrind --dump-instr=yes --collect-jumps=yes ./gstat;
+fi
+
+if [ "$2" = "clean" ]; then
+    rm gstat;
+fi
