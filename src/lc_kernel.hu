@@ -1,4 +1,8 @@
 #include <inttypes.h>
+#include "linear_complexity.hpp"
+#include <iostream>
+#include <vector>
+#include <assert.h>
 
 __device__ uint64_t dev_extract_bits(const uint8_t*__restrict data, int start, int bits);
 __device__ uint64_t dev_extract_reverse_bits(uint8_t* data, int start, int bits);
@@ -13,11 +17,21 @@ __global__ void lc_kernel(
     int data_n, 
     int data_size,
     int bit_sequence_len,
-    double*__restrict data_out);
+    double*__restrict data_out,
+    int offset = 0);
 
-void run_lc_tests(
-    const uint8_t* data_in,
-    int data_num,
-    int data_size,
-    int bit_sequence_len, 
-    double* data_out);
+std::vector<double> run_lc_tests(
+        const std::vector<uint8_t> &data_in,
+        int data_num,
+        int data_size,
+        int bit_sequence_len
+        );
+
+std::vector<double> run_lc_tests(
+        const std::vector<uint8_t> &data_in,
+        int data_num,
+        int data_size,
+        int bit_sequence_len
+        );
+
+void lc_test();

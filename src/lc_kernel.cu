@@ -1,9 +1,6 @@
 #include "lc_kernel.hu"
-#include <iostream>
-#include <vector>
 
-
-/// DATA
+/// DATA /// 
 __device__ const uint8_t byterev[256] = { 
   0x00, 0x80, 0x40, 0xc0, 0x20, 0xa0, 0x60, 0xe0, 0x10, 0x90, 0x50, 0xd0, 0x30, 0xb0, 0x70, 0xf0, 
   0x08, 0x88, 0x48, 0xc8, 0x28, 0xa8, 0x68, 0xe8, 0x18, 0x98, 0x58, 0xd8, 0x38, 0xb8, 0x78, 0xf8, 
@@ -163,14 +160,14 @@ __device__ double dev_lc_test(uint8_t* data, uint64_t data_size, uint64_t bit_se
 
 /// KERNEL
 __global__ void lc_kernel(
-        const uint8_t*__restrict data_in,
-        int data_num, 
-        int data_size,
-        int bit_sequence_len,
-        double*__restrict data_out){
-
+    const uint8_t *data_in,
+    int data_num, 
+    int data_size,
+    int bit_sequence_len,
+    double*__restrict data_out,
+    int offset) {
     // Calculate global thread ID
-    int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
+    int tid = offset + (blockIdx.x * blockDim.x) + threadIdx.x;
     // Boundary check
     if (tid < data_num){
         int offset = tid * data_size;
@@ -182,14 +179,13 @@ __global__ void lc_kernel(
 
 
 /// KERNEL LAUNCHER
-void run_lc_tests(
-        const uint8_t* data_in,
-        int data_num,
-        int data_size,
-        int bit_sequence_len, 
-        double* data_out
-        ){
+std::vector<double> run_lc_tests(
+    const std::vector<uint8_t> &data_in,
+    int data_num,
+    int data_size,
+    int bit_sequence_len) {
 
+    std::vector<double> data_out(data_num);
     int threads_per_block = 256;
     int blocks_per_grid = (data_num + threads_per_block - 1) / threads_per_block;
 
@@ -200,16 +196,159 @@ void run_lc_tests(
     cudaMalloc((void**)&dev_data_out, data_num * sizeof(double));
 
     // Copy data to device
-    cudaMemcpy(dev_data_in, data_in, data_num * data_size * sizeof(uint8_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_data_in, data_in.data(), data_num * data_size * sizeof(uint8_t), cudaMemcpyHostToDevice);
 
     // Launch kernel
 
     lc_kernel<<<blocks_per_grid, threads_per_block>>>(dev_data_in, data_num, data_size, bit_sequence_len, dev_data_out);
 
     // Copy data back to host
-    cudaMemcpy(data_out, dev_data_out, data_num * sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(data_out.data(), dev_data_out, data_num * sizeof(double), cudaMemcpyDeviceToHost);
 
     // Free device memory
     cudaFree(dev_data_in);
     cudaFree(dev_data_out);
+    return data_out;
+}
+
+
+/// MEHHH - doesnt speed up much :<
+std::vector<double> run_lc_tests_async(
+    const std::vector<uint8_t> &data_in,
+    int data_num,
+    int data_size,
+    int bit_sequence_len) {
+
+    std::vector<double> data_out(data_num);
+
+    int threads_num = data_num;
+    int streams_num = 4;
+    int threads_per_block = 256;
+
+    int threads_per_stream = threads_num / streams_num;
+    int blocks_per_stream = threads_per_stream / threads_per_block;
+     
+    int bytes_per_stream = threads_per_stream * data_size;
+    cudaStream_t streams[streams_num];
+    for (int i = 0; i < streams_num; ++i) ( cudaStreamCreate(&streams[i]) );
+
+    uint8_t* dev_data_in;
+    double* dev_data_out;
+    cudaMalloc((void**)&dev_data_in, data_num * data_size * sizeof(uint8_t));
+    cudaMalloc((void**)&dev_data_out, data_num * sizeof(double));
+
+    for (int i = 0; i < streams_num; ++i) {
+        int byte_offset = i * bytes_per_stream;
+        cudaMemcpyAsync(dev_data_in + byte_offset, data_in.data() + byte_offset, bytes_per_stream, cudaMemcpyHostToDevice, streams[i]);
+    }
+    for (int i = 0; i < streams_num; ++i) {
+        int thread_offset = i * threads_per_stream;
+        lc_kernel<<<blocks_per_stream, threads_per_block>>>(dev_data_in, data_num, data_size, bit_sequence_len, dev_data_out, thread_offset);
+    }
+    for (int i = 0; i < streams_num; ++i) {
+        int thread_offset = i * threads_per_stream;
+        cudaMemcpyAsync(&data_out.data()[thread_offset], &dev_data_out[thread_offset], threads_per_stream*sizeof(double), cudaMemcpyDeviceToHost, streams[i]);
+    }
+
+    cudaFree(dev_data_in);
+    cudaFree(dev_data_out);
+
+    return data_out;
+}
+
+
+void lc_test(){
+    int files = 8*1024; // 1M files
+    int file_size = 32; // 1Kb = 8Kb
+    int bit_sequence_len = 31;
+
+    // DATA GENERATION
+    cudaEvent_t gen_start, gen_stop;
+    float gen_time;
+
+    cudaEventCreate(&gen_start);
+    cudaEventRecord(gen_start, 0);
+
+    std::vector<std::vector<uint8_t>> data_pieces(files);
+    for(auto &piece : data_pieces) {
+        piece.resize(file_size);
+        for(int i = 0; i < file_size; i++) {
+            piece[i] = rand() % 256;
+        }
+    }
+
+    std::vector<uint8_t> data;
+    for(auto &piece : data_pieces) {
+        data.insert(data.end(), piece.begin(), piece.end());
+    }
+
+    cudaEventCreate(&gen_stop);
+    cudaEventRecord(gen_stop, 0);
+    cudaEventSynchronize(gen_stop);
+    cudaEventElapsedTime(&gen_time, gen_start, gen_stop);
+    std::cout << "Data generation time: " << gen_time << " ms" << std::endl;
+
+    std::vector<double> host_results(files);
+
+    // GPU
+    cudaEvent_t dev_start, dev_stop;
+    float dev_elapsedTime;
+
+    cudaEventCreate(&dev_start);
+    cudaEventRecord(dev_start,0);
+
+    auto dev_results = run_lc_tests(data, files, file_size, bit_sequence_len);
+
+    cudaEventCreate(&dev_stop);
+    cudaEventRecord(dev_stop,0);
+    cudaEventSynchronize(dev_stop);
+
+    cudaEventElapsedTime(&dev_elapsedTime, dev_start,dev_stop);
+    printf("Device time: %f ms\n", dev_elapsedTime);
+
+    // GPU ASYNC 
+    cudaEvent_t asc_start, asc_stop;
+    float asc_elapsedTime;
+
+    cudaEventCreate(&asc_start);
+    cudaEventRecord(asc_start,0);
+    
+    auto asc_results = run_lc_tests_async(data, files, file_size, bit_sequence_len);
+
+    cudaEventCreate(&asc_stop);
+    cudaEventRecord(asc_stop,0);
+    cudaEventSynchronize(asc_stop);
+
+    cudaEventElapsedTime(&asc_elapsedTime, asc_start,asc_stop);
+    printf("Device time: %f ms\n", asc_elapsedTime);
+
+    // CPU
+    cudaEvent_t host_start, host_stop;
+    float host_elapsedTime;
+
+    cudaEventCreate(&host_start);
+    cudaEventRecord(host_start,0);
+
+    for(int i = 0; i < files; i++) {
+        host_results[i] = lc_test(data_pieces[i], bit_sequence_len);
+    }
+
+    cudaEventCreate(&host_stop);
+    cudaEventRecord(host_stop,0);
+    cudaEventSynchronize(host_stop);
+
+    cudaEventElapsedTime(&host_elapsedTime, host_start,host_stop);
+    printf("Host time: %f ms\n", host_elapsedTime);
+
+    // Compare
+    for(int i = 0; i < files; i++) {
+    assert(abs(dev_results[i] - host_results[i]) < 0.0001);
+    }
+
+    // Compare
+    for(int i = 0; i < files; i++) {
+    assert(abs(asc_results[i] - host_results[i]) < 0.0001);
+    }
+
+    printf("Success!\n");
 }
