@@ -24,35 +24,20 @@ __device__ const double probs[7] = {0.01047, 0.03125, 0.12500, 0.50000, 0.25000,
 
 
 /// DEVICE FUNCTIONS
-__device__ uint64_t dev_extract_bits(const uint8_t*__restrict data, int start, int bits){
-    uint64_t value = 0;
-    int byte = start / 8;
-    int bit = start % 8;
-    int bits_left = bits;
-    while (bits_left > 0){
-        int bits_to_extract = (8 - bit < bits_left) ? 8 - bit : bits_left;
-        uint64_t mask = (1 << bits_to_extract) - 1;
-        value = (value << bits_to_extract) | ((data[byte] >> (8 - bit - bits_to_extract)) & mask);
-        bits_left -= bits_to_extract;
-        bit = 0;
-        byte++;
-    }
-    return value;
-}
 
-__device__ uint64_t dev_extract_reverse_bits(uint8_t* data, int start, int bits){
-    int end = start + bits;
+__device__ uint64_t dev_extract_reverse_bits(uint8_t* data, uint64_t start, uint64_t bits){
+    uint64_t end = start + bits;
 
-    int s_byte = start / 8;
-    int e_byte = end / 8;
+    uint64_t s_byte = start / 8;
+    uint64_t e_byte = end / 8;
 
-    int s_bit = start % 8;
-    int e_bit = end % 8;
+    uint64_t s_bit = start % 8;
+    uint64_t e_bit = end % 8;
 
     uint8_t right_bit_mask = (1 << (e_bit)) -1;
 
     uint64_t output = 0;
-    int i;
+    uint64_t i;
     for (i = e_byte; i >= s_byte; i--){
         uint8_t current_byte = byterev[data[i]];
 
@@ -62,6 +47,7 @@ __device__ uint64_t dev_extract_reverse_bits(uint8_t* data, int start, int bits)
         output <<= (i == s_byte) ? (8-s_bit) : 8;
 
         output |= current_byte;
+        if(i == s_byte) break;
     }
     return output;
 }
@@ -161,37 +147,37 @@ __device__ double dev_lc_test(uint8_t* data, uint64_t data_size, uint64_t bit_se
 /// KERNEL
 __global__ void lc_kernel(
     const uint8_t *data_in,
-    int data_num, 
-    int data_size,
-    int bit_sequence_len,
+    uint64_t data_num, 
+    uint64_t data_size,
+    uint64_t bit_sequence_len,
     double*__restrict data_out,
-    int offset) {
+    uint64_t offset) {
     // Calculate global thread ID
-    int tid = offset + (blockIdx.x * blockDim.x) + threadIdx.x;
+    uint64_t tid = offset + (blockIdx.x * blockDim.x) + threadIdx.x;
     // Boundary check
     if (tid < data_num){
-        int offset = tid * data_size;
-        uint8_t* data = (uint8_t*)&data_in[offset];
+        uint64_t byte_offset = tid * data_size;
+        uint8_t* data = (uint8_t*)&data_in[byte_offset];
         double chi = dev_lc_test(data, data_size, bit_sequence_len);
         data_out[tid] = chi;
     }
 }
 
-
 /// KERNEL LAUNCHER
 std::vector<double> run_lc_tests(
     const std::vector<uint8_t> &data_in,
-    int data_num,
-    int data_size,
-    int bit_sequence_len) {
+    uint64_t data_num,
+    uint64_t data_size,
+    uint64_t bit_sequence_len) {
 
     std::vector<double> data_out(data_num);
-    int threads_per_block = 256;
-    int blocks_per_grid = (data_num + threads_per_block - 1) / threads_per_block;
+    uint64_t threads_per_block = 256;
+    uint64_t blocks_per_grid = (data_num + threads_per_block - 1) / threads_per_block;
 
     // Allocate device memory
     uint8_t* dev_data_in;
     double* dev_data_out;
+
     cudaMalloc((void**)&dev_data_in, data_num * data_size * sizeof(uint8_t));
     cudaMalloc((void**)&dev_data_out, data_num * sizeof(double));
 
@@ -199,7 +185,6 @@ std::vector<double> run_lc_tests(
     cudaMemcpy(dev_data_in, data_in.data(), data_num * data_size * sizeof(uint8_t), cudaMemcpyHostToDevice);
 
     // Launch kernel
-
     lc_kernel<<<blocks_per_grid, threads_per_block>>>(dev_data_in, data_num, data_size, bit_sequence_len, dev_data_out);
 
     // Copy data back to host
@@ -211,56 +196,7 @@ std::vector<double> run_lc_tests(
     return data_out;
 }
 
-
-/// MEHHH - doesnt speed up much :<
-std::vector<double> run_lc_tests_async(
-    const std::vector<uint8_t> &data_in,
-    int data_num,
-    int data_size,
-    int bit_sequence_len) {
-
-    std::vector<double> data_out(data_num);
-
-    int threads_num = data_num;
-    int streams_num = 4;
-    int threads_per_block = 256;
-
-    int threads_per_stream = threads_num / streams_num;
-    int blocks_per_stream = threads_per_stream / threads_per_block;
-     
-    int bytes_per_stream = threads_per_stream * data_size;
-    cudaStream_t streams[streams_num];
-    for (int i = 0; i < streams_num; ++i) ( cudaStreamCreate(&streams[i]) );
-
-    uint8_t* dev_data_in;
-    double* dev_data_out;
-    cudaMalloc((void**)&dev_data_in, data_num * data_size * sizeof(uint8_t));
-    cudaMalloc((void**)&dev_data_out, data_num * sizeof(double));
-
-    for (int i = 0; i < streams_num; ++i) {
-        int byte_offset = i * bytes_per_stream;
-        cudaMemcpyAsync(dev_data_in + byte_offset, data_in.data() + byte_offset, bytes_per_stream, cudaMemcpyHostToDevice, streams[i]);
-    }
-    for (int i = 0; i < streams_num; ++i) {
-        int thread_offset = i * threads_per_stream;
-        lc_kernel<<<blocks_per_stream, threads_per_block>>>(dev_data_in, data_num, data_size, bit_sequence_len, dev_data_out, thread_offset);
-    }
-    for (int i = 0; i < streams_num; ++i) {
-        int thread_offset = i * threads_per_stream;
-        cudaMemcpyAsync(&data_out.data()[thread_offset], &dev_data_out[thread_offset], threads_per_stream*sizeof(double), cudaMemcpyDeviceToHost, streams[i]);
-    }
-
-    cudaFree(dev_data_in);
-    cudaFree(dev_data_out);
-
-    return data_out;
-}
-
-
-void lc_test(){
-    int files = 8*1024; // 1M files
-    int file_size = 32; // 1Kb = 8Kb
-    int bit_sequence_len = 31;
+void lc_test(uint64_t files, uint64_t file_size, uint64_t bit_sequence_len) {
 
     // DATA GENERATION
     cudaEvent_t gen_start, gen_stop;
@@ -272,7 +208,7 @@ void lc_test(){
     std::vector<std::vector<uint8_t>> data_pieces(files);
     for(auto &piece : data_pieces) {
         piece.resize(file_size);
-        for(int i = 0; i < file_size; i++) {
+        for(uint64_t i = 0; i < file_size; i++) {
             piece[i] = rand() % 256;
         }
     }
@@ -293,7 +229,6 @@ void lc_test(){
     // GPU
     cudaEvent_t dev_start, dev_stop;
     float dev_elapsedTime;
-
     cudaEventCreate(&dev_start);
     cudaEventRecord(dev_start,0);
 
@@ -302,25 +237,8 @@ void lc_test(){
     cudaEventCreate(&dev_stop);
     cudaEventRecord(dev_stop,0);
     cudaEventSynchronize(dev_stop);
-
     cudaEventElapsedTime(&dev_elapsedTime, dev_start,dev_stop);
     printf("Device time: %f ms\n", dev_elapsedTime);
-
-    // GPU ASYNC 
-    cudaEvent_t asc_start, asc_stop;
-    float asc_elapsedTime;
-
-    cudaEventCreate(&asc_start);
-    cudaEventRecord(asc_start,0);
-    
-    auto asc_results = run_lc_tests_async(data, files, file_size, bit_sequence_len);
-
-    cudaEventCreate(&asc_stop);
-    cudaEventRecord(asc_stop,0);
-    cudaEventSynchronize(asc_stop);
-
-    cudaEventElapsedTime(&asc_elapsedTime, asc_start,asc_stop);
-    printf("Device time: %f ms\n", asc_elapsedTime);
 
     // CPU
     cudaEvent_t host_start, host_stop;
@@ -329,7 +247,7 @@ void lc_test(){
     cudaEventCreate(&host_start);
     cudaEventRecord(host_start,0);
 
-    for(int i = 0; i < files; i++) {
+    for(uint64_t i = 0; i < files; i++) {
         host_results[i] = lc_test(data_pieces[i], bit_sequence_len);
     }
 
@@ -341,13 +259,8 @@ void lc_test(){
     printf("Host time: %f ms\n", host_elapsedTime);
 
     // Compare
-    for(int i = 0; i < files; i++) {
-    assert(abs(dev_results[i] - host_results[i]) < 0.0001);
-    }
-
-    // Compare
-    for(int i = 0; i < files; i++) {
-    assert(abs(asc_results[i] - host_results[i]) < 0.0001);
+    for(uint64_t i = 0; i < files; i++) {
+        assert(abs(dev_results[i] - host_results[i]) < 0.0001);
     }
 
     printf("Success!\n");

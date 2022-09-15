@@ -23,45 +23,19 @@ uint8_t byterev[256] = {
 
 double probs[7] = {0.01047, 0.03125, 0.12500, 0.50000, 0.25000, 0.06250, 0.020833};
 
-uint64_t extract_bits(const uint8_t* data, int start, int bits){
-    uint64_t ending_bit = start + bits;
+uint64_t extract_reverse_bits(const uint8_t* data, uint64_t start, uint64_t bits){
+    uint64_t end = start + bits;
 
-    uint64_t starting_byte = start / 8;
-    uint64_t ending_byte = ending_bit / 8;
+    uint64_t s_byte = start / 8;
+    uint64_t e_byte = end / 8;
 
-    uint64_t starting_bit_index = start % 8;
-    uint8_t right_bit_mask = (1 << (8 - starting_bit_index)) - 1;
-
-    uint64_t ending_bit_index = ending_bit % 8;
-
-    uint64_t output = 0;
-    uint64_t i;
-    for (i = starting_byte; i <= ending_byte; i++) {
-        uint8_t current_byte = data[i];
-
-        current_byte &= (i == starting_byte) ? right_bit_mask : 0xff;
-
-        current_byte >>= (i == ending_byte) ? (8 - ending_bit_index) : 0;
-        output <<= (i == ending_byte) ? ending_bit_index : 8;
-
-        output |= current_byte;
-    }
-    return output;
-}
-
-uint64_t extract_reverse_bits(const uint8_t* data, int start, int bits){
-    int end = start + bits;
-
-    int s_byte = start / 8;
-    int e_byte = end / 8;
-
-    int s_bit = start % 8;
-    int e_bit = end % 8;
+    uint64_t s_bit = start % 8;
+    uint64_t e_bit = end % 8;
 
     uint8_t right_bit_mask = (1 << (e_bit)) -1;
 
     uint64_t output = 0;
-    int i;
+    uint64_t i;
     for (i = e_byte; i >= s_byte; i--){
         uint8_t current_byte = byterev[data[i]];
 
@@ -71,6 +45,7 @@ uint64_t extract_reverse_bits(const uint8_t* data, int start, int bits){
         output <<= (i == s_byte) ? (8-s_bit) : 8;
 
         output |= current_byte;
+        if(i == s_byte) break;
     }
     return output;
 }
