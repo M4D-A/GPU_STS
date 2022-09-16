@@ -1,29 +1,37 @@
+#ifndef _LC_H_
+#define _LC_H_
+
 #include <inttypes.h>
-#include "linear_complexity.hpp"
 #include <iostream>
 #include <vector>
 #include <assert.h>
 
-__device__ uint64_t dev_extract_reverse_bits(uint8_t* data, uint64_t start, uint64_t bits);
-__device__ uint64_t dev_uintxor(uint64_t num);
-__device__ uint64_t dev_trailing_zeros(uint64_t num);
-__device__ uint64_t dev_reverse_uint64_t(uint64_t num, uint64_t len);
-__device__ uint64_t dev_complexity(uint64_t sequence, uint64_t length);
-__device__ double dev_lc_test(uint8_t* data, uint64_t data_size, uint64_t bit_sequence_len);
+__host__ __device__ uint64_t extract_reverse_bits(uint8_t* data, uint64_t start, uint64_t bits);
+__host__ __device__ uint64_t parity(uint64_t num);
+__host__ __device__ uint64_t trailing_zeros(uint64_t num);
+__host__ __device__ uint64_t complexity(uint64_t sequence, uint64_t length);
+__host__ __device__ double lc_test(uint8_t* data, uint64_t data_size, uint64_t length);
 
 __global__ void lc_kernel(
-    const uint8_t*__restrict data_in,
-    uint64_t data_n, 
+    const uint8_t*__restrict data,
+    uint64_t data_num, 
     uint64_t data_size,
-    uint64_t bit_sequence_len,
+    uint64_t bits,
     double*__restrict data_out,
-    uint64_t offset = 0);
+    uint64_t thread_offset = 0 );
 
-std::vector<double> run_lc_tests(
-        const std::vector<uint8_t> &data_in,
-        uint64_t data_num,
-        uint64_t data_size,
-        uint64_t bit_sequence_len
-        );
+std::vector<double> run_gpu_lc_tests(
+    const std::vector<uint8_t> &data,
+    uint64_t data_num,
+    uint64_t data_size,
+    uint64_t bits );
 
-void lc_test(uint64_t files, uint64_t file_size, uint64_t bit_sequence_len);
+std::vector<double> run_cpu_lc_tests(
+    const std::vector<uint8_t> &data,
+    uint64_t data_num,
+    uint64_t data_size,
+    uint64_t bits );
+
+int lc_perf(uint64_t data_num, uint64_t data_size, uint64_t bits);
+
+#endif /*  _LC_H_  */

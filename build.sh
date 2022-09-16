@@ -1,7 +1,9 @@
-nvcc -O2 src/*.cpp src/*.cu -g -G -o gstat;
+nvcc -O1 src/*.cpp src/*.cu -g -G -o gstat;
 echo "Compilation done";
 
-if [ "$1" = "run" ]; then
+if [ "$1" = "build" ]; then
+    :
+elif [ "$1" = "run" ]; then
     time ./gstat;
 elif [ "$1" = "debug" ]; then
     cuda-gdb ./gstat;

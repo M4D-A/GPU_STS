@@ -1,4 +1,3 @@
-#include "linear_complexity.hpp"
 #include "io.hpp"
 #include "lc_kernel.hu"
 #include <iostream>
@@ -6,15 +5,9 @@
 #include <assert.h>
 
 
-int main() {
-  for(int fsize = 4096; fsize <= 1024*1024; fsize*=2){
-    printf("fsize: %d\n", fsize);
-    for(int fnum = 32; fnum <= 64*1024; fnum*=2){
-      printf("fnum: %d\n", fnum);
-      lc_test(fnum, fsize ,31);
-      printf("\n");
-    }
-    printf("###############\n");
-  }
+int main(int argc, char **argv){
+  auto data = read_file(argv[1]);
+  auto n = lc_test(data.data(), data.size(), atoi(argv[2]));
+  printf("%lf\n",n);
   return 0;
 }
