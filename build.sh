@@ -1,4 +1,5 @@
-nvcc -O1 src/*.cpp src/*.cu -g -G -o gstat;
+nvcc -O2 -Xptxas="-v"  src/*.cpp src/*.cu -g -G -o gstat;
+cp gstat /home/adam/NIST-Statistical-Test-Suite/sts;
 echo "Compilation done";
 
 if [ "$1" = "build" ]; then
