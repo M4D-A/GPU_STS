@@ -13,29 +13,19 @@ __const__ double probs[7] = {0.01047, 0.03125, 0.12500, 0.50000, 0.25000, 0.0625
 
 /// HOST-DEVICE FUNCTIONS
 __host__ __device__ uint64_t extract_bits(uint8_t *data, uint32_t start, uint32_t bits) {
-    uint32_t end = start + bits;
-
-    uint32_t starting_byte = start >> 3lu;
-    uint32_t ending_byte = end >> 3lu;
-
-    uint32_t starting_bit = start & 7lu;
-    uint32_t ending_bit = end & 7lu;
-    
-    uint8_t right_bit_mask = (1 << (8 - starting_bit)) - 1;
-
-    uint64_t output = 0;
-    uint64_t i;
-    for (i = starting_byte; i <= ending_byte; i++) {
-        uint8_t current_byte = data[i];
-
-        current_byte &= (i == starting_byte) ? right_bit_mask : 0xff;
-
-        current_byte >>= (i == ending_byte) ? (8 - ending_bit) : 0;
-        output <<= (i == ending_byte) ? ending_bit : 8;
-
-        output |= current_byte;
+    uint64_t result = 0;
+    uint32_t byte = start / 8;
+    uint32_t bit = start % 8;
+    uint32_t bits_left = bits;
+    while (bits_left > 0) {
+        uint32_t bits_to_read = min(8 - bit, bits_left);
+        uint64_t mask = (1 << bits_to_read) - 1;
+        result = (result << bits_to_read) | ((data[byte] >> (8 - bit - bits_to_read)) & mask);
+        bits_left -= bits_to_read;
+        bit = 0;
+        byte++;
     }
-    return output;
+    return result;
 }
 
 __host__ __device__ uint32_t parity(uint64_t sequence) {
@@ -100,7 +90,7 @@ __host__ __device__ double lc_test(uint8_t* data, uint32_t data_size, uint32_t b
     double s_one = (bits & 1) ? -1.0 : 1.0;
     double mi = (double) (bits / 2.0);
     mi += (9.0 - s_one) / 36.0;
-    mi -= ((bits / 3.0) + (2.0 / 9.0)) / pow(2.0, bits);
+    mi -= ((bits / 3.0) + (2.0/ 9.0)) / pow(2.0, bits);
 
     for (i = 0; i < sequences_num; i++) {
         uint32_t starting_bit = i * bits;
@@ -108,7 +98,7 @@ __host__ __device__ double lc_test(uint8_t* data, uint32_t data_size, uint32_t b
         uint64_t sequence = extract_bits(data, starting_bit, bits);
         uint32_t lc = complexity(sequence, bits);
 
-        double ti = s_one * ((double) lc - mi) + 2.0 / 9.0;
+        double ti = s_one * ((double) lc - mi) + 2.0/ 9.0;
         bins[0] += (ti <= -2.5) ? 1u : 0;
         bins[1] += (ti > -2.5 && ti <= -1.5) ? 1u : 0;
         bins[2] += (ti > -1.5 && ti <= -0.5) ? 1u : 0;
@@ -135,17 +125,15 @@ __global__ void lc_kernel(
     uint32_t data_num, 
     uint32_t data_size,
     uint32_t bits,
-    double*__restrict data_out,
-    uint32_t thread_offset) {
+    double*__restrict data_out) {
 
-    uint64_t thread_id = thread_offset + (blockIdx.x * blockDim.x) + threadIdx.x;
+    uint32_t thread_id = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (thread_id < data_num){
-        uint64_t byte_offset = thread_id * data_size;
+        uint64_t byte_offset = (uint64_t)thread_id * (uint64_t)data_size;
         uint8_t* thred_data = (uint8_t*)&data[byte_offset];
         data_out[thread_id] = lc_test(thred_data, data_size, bits);
     }
 }
-
 
 /// GPU LAUNCHER
 std::vector<double> run_gpu_lc_tests(
@@ -194,30 +182,30 @@ std::vector<double> run_cpu_lc_tests(
 
 /// PERFORMANCE TESTS
 int lc_perf(uint64_t data_num, uint64_t data_size, uint64_t bits) {
-
     // DATA GENERATION
     cudaEvent_t gen_start, gen_stop;
-    float gen_time;
+    float gen_time, gen_throughput;
     cudaEventCreate(&gen_start);
     cudaEventRecord(gen_start, 0);
 
     std::vector<uint8_t> data_pieces(data_num * data_size);
-    uint8_t r = 117;
+    //uint8_t r = 117;
     for (uint64_t i = 0; i < data_num * data_size; i++) {
-        r = (r * r) + 117 * r + 17 + i;
-        data_pieces[i] = r;
+        //r = (r * r) + 117 * r + 17 + i;
+        data_pieces[i] = rand() % 256;
     }
 
     cudaEventCreate(&gen_stop);
     cudaEventRecord(gen_stop, 0);
     cudaEventSynchronize(gen_stop);
     cudaEventElapsedTime(&gen_time, gen_start, gen_stop);
-    std::cout << "Data generation time: " << gen_time << " ms" << std::endl;
+    gen_throughput = (data_num * data_size / (1<<30)) / (gen_time / 1000);
+    printf("Data generation time: %f ms, throughput: %f GB/s\n", gen_time, gen_throughput);
 
     // GPU TEST
     run_gpu_lc_tests(data_pieces, data_num, data_size, bits); // warmup
     cudaEvent_t gpu_start, gpu_stop;
-    float gpu_time;
+    float gpu_time, gpu_throughput;
     cudaEventCreate(&gpu_start);
     cudaEventRecord(gpu_start, 0);
 
@@ -227,11 +215,13 @@ int lc_perf(uint64_t data_num, uint64_t data_size, uint64_t bits) {
     cudaEventRecord(gpu_stop, 0);
     cudaEventSynchronize(gpu_stop);
     cudaEventElapsedTime(&gpu_time, gpu_start, gpu_stop);
-    std::cout << "GPU time: " << gpu_time << " ms" << std::endl;
+    gpu_throughput = (data_num * data_size / (1<<30)) / (gpu_time / 1000);
+    printf("GPU time: %f ms, throughput: %f GB/s\n", gpu_time, gpu_throughput);
+
 
     // CPU TEST
     cudaEvent_t cpu_start, cpu_stop;
-    float cpu_time;
+    float cpu_time, cpu_throughput;
     cudaEventCreate(&cpu_start);
     cudaEventRecord(cpu_start, 0);
 
@@ -241,7 +231,9 @@ int lc_perf(uint64_t data_num, uint64_t data_size, uint64_t bits) {
     cudaEventRecord(cpu_stop, 0);
     cudaEventSynchronize(cpu_stop);
     cudaEventElapsedTime(&cpu_time, cpu_start, cpu_stop);
-    std::cout << "CPU time: " << cpu_time << " ms" << std::endl;
+    cpu_throughput = (data_num * data_size / (1<<30)) / (cpu_time / 1000);
+    printf("CPU time: %f ms, throughput: %f GB/s\n", cpu_time, cpu_throughput);
+
 
     // CHECK
     for (uint64_t i = 0; i < data_num; i++) {

@@ -6,8 +6,6 @@
 
 
 int main(int argc, char **argv){
-  auto data = read_file(argv[1]);
-  auto n = lc_test(data.data(), data.size(), atoi(argv[2]));
-  printf("%lf\n",n);
+  lc_perf(1204*1024, 1024, 32);
   return 0;
 }

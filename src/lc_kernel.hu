@@ -17,8 +17,7 @@ __global__ void lc_kernel(
     uint32_t data_num, 
     uint32_t data_size,
     uint32_t bits,
-    double*__restrict data_out,
-    uint32_t thread_offset = 0 );
+    double*__restrict data_out);
 
 std::vector<double> run_gpu_lc_tests(
     const std::vector<uint8_t> &data,

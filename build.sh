@@ -1,4 +1,4 @@
-nvcc -O2 -Xptxas="-v"  src/*.cpp src/*.cu -g -G -o gstat;
+nvcc -O3 src/*.cpp src/*.cu -o gstat;
 cp gstat /home/adam/NIST-Statistical-Test-Suite/sts;
 echo "Compilation done";
 
