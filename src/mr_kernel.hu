@@ -1,0 +1,34 @@
+#ifndef _MR_H_
+#define _MR_H_
+
+#include <inttypes.h>
+#include <iostream>
+#include <vector>
+#include <assert.h>
+
+__host__ __device__ uint64_t extract_bits_mr(uint8_t *data, uint32_t start, uint32_t bits);
+__host__ __device__ uint64_t matrix_rank(uint64_t *matrix, uint32_t max_rank);
+__host__ __device__ double mr_test(uint8_t *data, uint32_t data_len, uint32_t max_rank);
+
+__global__ void mr_kernel(
+    const uint8_t *data,
+    uint32_t data_num, 
+    uint32_t data_size,
+    uint32_t bits,
+    double*__restrict data_out);
+
+std::vector<double> run_gpu_mr_tests(
+    const std::vector<uint8_t> &data,
+    uint64_t data_num,
+    uint64_t data_size,
+    uint64_t bits);
+
+std::vector<double> run_cpu_mr_tests(
+    const std::vector<uint8_t> &data,
+    uint64_t data_num,
+    uint64_t data_size,
+    uint64_t bits);
+
+int mr_perf(uint64_t data_num, uint64_t data_size, uint64_t bits);
+
+#endif /*  _MR_H_  */

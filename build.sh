@@ -1,6 +1,7 @@
 nvcc -O3 src/*.cpp src/*.cu -o gstat;
 cp gstat /home/adam/NIST-Statistical-Test-Suite/sts;
 echo "Compilation done";
+echo ""
 
 if [ "$1" = "build" ]; then
     :

@@ -182,6 +182,8 @@ std::vector<double> run_cpu_lc_tests(
 
 /// PERFORMANCE TESTS
 int lc_perf(uint64_t data_num, uint64_t data_size, uint64_t bits) {
+    float gb = ((float)data_num * (float)data_size / (float)(1<<30));
+    printf("LC-%lu test on %lu samples of size %luB (%lfGB)\n", bits, data_num, data_size, gb);
     // DATA GENERATION
     cudaEvent_t gen_start, gen_stop;
     float gen_time, gen_throughput;
@@ -199,7 +201,7 @@ int lc_perf(uint64_t data_num, uint64_t data_size, uint64_t bits) {
     cudaEventRecord(gen_stop, 0);
     cudaEventSynchronize(gen_stop);
     cudaEventElapsedTime(&gen_time, gen_start, gen_stop);
-    gen_throughput = (data_num * data_size / (1<<30)) / (gen_time / 1000);
+    gen_throughput = gb / (gen_time / 1000);
     printf("Data generation time: %f ms, throughput: %f GB/s\n", gen_time, gen_throughput);
 
     // GPU TEST
@@ -215,7 +217,7 @@ int lc_perf(uint64_t data_num, uint64_t data_size, uint64_t bits) {
     cudaEventRecord(gpu_stop, 0);
     cudaEventSynchronize(gpu_stop);
     cudaEventElapsedTime(&gpu_time, gpu_start, gpu_stop);
-    gpu_throughput = (data_num * data_size / (1<<30)) / (gpu_time / 1000);
+    gpu_throughput = gb / (gpu_time / 1000);
     printf("GPU time: %f ms, throughput: %f GB/s\n", gpu_time, gpu_throughput);
 
 
@@ -231,17 +233,18 @@ int lc_perf(uint64_t data_num, uint64_t data_size, uint64_t bits) {
     cudaEventRecord(cpu_stop, 0);
     cudaEventSynchronize(cpu_stop);
     cudaEventElapsedTime(&cpu_time, cpu_start, cpu_stop);
-    cpu_throughput = (data_num * data_size / (1<<30)) / (cpu_time / 1000);
+    cpu_throughput = gb / (cpu_time / 1000);
     printf("CPU time: %f ms, throughput: %f GB/s\n", cpu_time, cpu_throughput);
 
 
     // CHECK
     for (uint64_t i = 0; i < data_num; i++) {
-        if (abs(gpu_out[i] - cpu_out[i]) > 0.0001){
+        if (abs(gpu_out[i] - cpu_out[i]) > 1e-6) {
             std::cout << "ERROR: " << i << " " << gpu_out[i] << " " << cpu_out[i] << std::endl;
         }
     }
 
     std::cout << "GPU speedup: " << cpu_time / gpu_time << std::endl;
+    printf("\n");
     return 0;
 }
