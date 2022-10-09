@@ -194,7 +194,7 @@ int lc_perf(uint64_t data_num, uint64_t data_size, uint64_t bits) {
     //uint8_t r = 117;
     for (uint64_t i = 0; i < data_num * data_size; i++) {
         //r = (r * r) + 117 * r + 17 + i;
-        data_pieces[i] = rand() % 256;
+        data_pieces[i] = rand() & 0xFF;
     }
 
     cudaEventCreate(&gen_stop);

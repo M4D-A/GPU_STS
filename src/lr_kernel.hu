@@ -1,0 +1,30 @@
+#include <inttypes.h>
+#include <inttypes.h>
+#include <iostream>
+#include <vector>
+#include <assert.h>
+
+/// MAIN ///
+__host__ __device__ uint64_t sequence_longest_run(const uint8_t *sequence, uint64_t seq_len);
+__host__ __device__ double lr_test(const uint8_t *data, uint64_t data_len, uint64_t mode);
+
+__global__ void lr_kernel(
+    const uint8_t *data,
+    uint32_t data_num, 
+    uint32_t data_size,
+    uint32_t mode,
+    double*__restrict data_out);
+
+std::vector<double> run_gpu_lr_tests(
+    const std::vector<uint8_t> &data,
+    uint64_t data_num,
+    uint64_t data_size,
+    uint64_t mode);
+
+std::vector<double> run_cpu_lc_tests(
+    const std::vector<uint8_t> &data,
+    uint64_t data_num,
+    uint64_t data_size,
+    uint64_t mode);
+
+int lr_perf(uint64_t data_num, uint64_t data_size, uint64_t mode);
